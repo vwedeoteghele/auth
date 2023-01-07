@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt')
 const nodemailer = require('nodemailer')
 const {v4: uuidv4} = require('uuid')
 require('dotenv').config()
+const path = require('path')
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -26,15 +27,15 @@ transporter.verify((error, success) => {
 
 //function to send email for verification
 const sendVerificationEmail = ({_id, email}, res) => {
-const currentUrl = "http://localhost/5000"
-const uniqueString = uuidv4 + _id
+const currentUrl = "http://localhost:3000"
+const uniqueString = uuidv4() + _id
 
 //mail options
  const mailOptions = {
   from: process.env.AUTH_EMAIL,
   to: email,
   subject: "verify your email",
-  html: `<p>Verify your email address to complete the signup and login into your account</p><p>This link <b>expires in 6 hours</b></p><p>Press <a href=${currentUrl + "user/verify/" + _id + "/" + uniqueString}>Here</a> to proceed</p>`
+  html: `<p>Verify your email address to complete the signup and login into your account</p><p>This link <b>expires in 6 hours</b></p><p>Press <a href=${currentUrl + "/user/verify/" + _id + "/" + uniqueString}>Here</a> to proceed</p>`
  }
 
  const saltRounds = 10
@@ -177,6 +178,97 @@ router.post('/signup', (req, res) => {
   }
 })
 
+router.get('/verify/:userId/:uniqueString', (req, res) => {
+  const {userId, uniqueString} = req.params
+  console.log({userId, uniqueString} );
+  UserVerification.findOne({userId})
+  .then((result) => {
+    console.log(result);
+    if(result) {
+      User.updateOne({_id: userId}, {verified: true})
+      .then(() => {
+        UserVerification.deleteMany({userId})
+        .then(() => {
+          console.log("got here static");
+          res.sendFile(path.join(__dirname, './../views/verified.html'))
+        })
+        .catch(err => {
+          console.log("got here failed delte");
+
+          console.log(err);
+          const message = "An error occured while checking your identity"
+          res.sendFile(path.join(__dirname, './../views/notVerified.html'));
+        })
+      })
+      .catch((err) => {
+        console.log(err)
+        const message = "An error occured while checking your identity"
+        res.sendFile(path.join(__dirname, './../views/notVerified.html'));
+      })
+      
+    } else {
+      console.log("got here failed delte null");
+      const message = "An error occured while checking your identity"
+      res.sendFile(path.join(__dirname, './../views/notVerified.html'));
+   
+    }
+  })
+  .catch((err) => {
+    console.log("got here failed delte last");
+
+    console.log(err);
+    const message = "An error occured while checking your identity"
+    res.sendFile(path.join(__dirname, './../views/notVerified.html'));
+  })
+})
+router.get('/verify/:userId', (req, res) => {
+  console.log("zgot here");
+const {userId, uniqueString} = req.params
+console.log({userId, uniqueString} );
+UserVerification.findOne({userId})
+.then((result) => {
+  if(result) {
+    User.updateOne({_id: userId}, {verified: true})
+    .then(() => {
+      UserVerification.deleteMany({userId})
+      .then(() => {
+        res.sendFile(path.join(__dirname, './../views/verified.html'))
+      })
+      .catch(err => {
+        console.log(err);
+        const message = "An error occured while checking your identity"
+        res.redirect(`/user/verified/error=true&message=${message}`)
+      })
+    })
+    .catch((err) => {
+      console.log(err)
+      const message = "An error occured while checking your identity"
+      res.redirect(`/user/verified/error=true&message=${message}`)
+    })
+    
+  } else {
+
+    const message = "An error occured while checking your identity"
+    res.redirect(`/user/verified/error=true&message=${message}`)
+  }
+})
+.catch((err) => {
+  console.log(err);
+  const message = "An error occured while checking your identity"
+  res.redirect(`/user/verified/error=true&message=${message}`)
+  })
+})
+
+router.get('/verified', (req, res) => {
+  
+  res.sendFile(path.join(__dirname, './../views/verified.html'))
+})
+
+router.get('/notVerified', (req, res) => {
+  res.sendFile(path.join(__dirname, './../views/notVerified.html'))
+
+})
+
 router.post('/login', (req, res) => {
   let {email, password} = req.body
   email = email.trim()
@@ -193,7 +285,12 @@ router.post('/login', (req, res) => {
     .then((data) => {
       console.log(data);
       if(data) {
-        
+        if(!data.verified) {
+          res.status(400).json({
+            status: "FAILED",
+            message: "Please verify your account"
+          })
+        }
         const hashedPassword = data.password
 
         bcrypt.compare(password, hashedPassword)

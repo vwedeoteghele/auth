@@ -9,7 +9,8 @@ const port = 3000
 
 app.use(express.urlencoded({extended: false}))
 app.use(express.json())
-app.use("/", UserRouter)
+app.use(express.static('views'))
+app.use("/user", UserRouter)
 app.listen(port, () => {
   console.log(`server listening on port ${port}`);
 })
