@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const User = require('../models/User')
 const UserVerification = require('../models/UserVerification')
+const PasswordReset = require('./../models/passwordReset')
 const bcrypt = require('bcrypt')
 const nodemailer = require('nodemailer')
 const {v4: uuidv4} = require('uuid')
@@ -82,6 +83,72 @@ const uniqueString = uuidv4() + _id
  })
 }
 
+
+const sendResetEmail = ({_id, email}, url, res) => {
+  const resetString =uuidv4() + _id
+  PasswordReset.deleteMany({userId: _id})
+  .then(() => {
+    //mail options
+ const mailOptions = {
+  from: process.env.AUTH_EMAIL,
+  to: email,
+  subject: "Reset your password",
+  html: `<p>We heard you lost access to your accunt, we got your back on this. Clink on the link below to reset your password</p><p>This link <b>expires in 60 minutes</b></p><p>Press <a href=${url + "/" + _id + "/" + resetString}>Here</a> to proceed</p>`
+ }
+
+bcrypt.hash(resetString, 10)
+.then(hashedString => {
+  const passwordReset = new PasswordReset({
+    userId: _id,
+    resetString: hashedString,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 3600000
+  })
+
+  passwordReset.save()
+  .then(() => {
+    transporter.sendMail(mailOptions)
+    .then(() => {
+      res.status(201)
+      .json({
+        status: "PENDING",
+        message: "reset password email sent"
+      })
+    })
+    .catch(err => {
+      console.log(err);
+      res.status(400).json({
+        status: "FAILED",
+        message: "Reset email failed!"
+      })
+    })  
+  })
+  .catch(err => {
+    console.log(err);
+    res.status(400).json({
+      status: "FAILED",
+      message: "Error occurred"
+    })
+  })
+})
+.catch(err => {
+  console.log(err);
+  res.status(400).json({
+    status: "FAILED",
+    message: "Error occurred"
+  })
+})
+
+
+  })
+  .catch(err => {
+    console.log(err);
+    res.status(400).json({
+      status: "FAILED",
+      message: "Error occurred"
+    })
+  })
+}
 
 
 
@@ -180,7 +247,6 @@ router.post('/signup', (req, res) => {
 
 router.get('/verify/:userId/:uniqueString', (req, res) => {
   const {userId, uniqueString} = req.params
-  console.log({userId, uniqueString} );
   UserVerification.findOne({userId})
   .then((result) => {
     console.log(result);
@@ -221,6 +287,8 @@ router.get('/verify/:userId/:uniqueString', (req, res) => {
     res.sendFile(path.join(__dirname, './../views/notVerified.html'));
   })
 })
+
+
 router.get('/verify/:userId', (req, res) => {
   console.log("zgot here");
 const {userId, uniqueString} = req.params
@@ -324,6 +392,121 @@ router.post('/login', (req, res) => {
       })
     })
   }
+})
+
+router.post('/requestPasswordReset', (req, res) => {
+
+  const {email} = req.body
+  let redirectUrl = 'http://localhost:3000/rpassword'
+  User.findOne({email})
+  .then((result) => {
+    if(result && result.verified) {
+      sendResetEmail(result, redirectUrl, res)
+    } else {
+      res.status(400).json({
+        status: "FAILED",
+        message: "There is no user with email or user is not verified"
+      })
+    }
+  })
+  .catch((err) => {
+    console.log(err);
+    res.status(400).json({
+      status: "FAILED",
+      message: "Error occurred"
+    })
+  })
+})
+
+router.post('/resetPassword', (req, res) => {
+
+  const {userId, resetString, newPassword} = req.body
+
+  PasswordReset.findOne({userId})
+  then(result => {
+    if(result) {
+      if(result.expiredAt < Date.now()) {
+        PasswordReset.deleteOne({userId})
+        .then(() => {
+          res.status(400).json({
+            status: "FAILED",
+            message: "The link has expired, Please generate a new reset password link"
+          })
+        })
+        .catch(err => {
+          console.log(err);
+          res.status(400).json({
+            status: "FAILED",
+            message: "Error occurred"
+          })
+        })
+      } else {
+        const hashedString = result.resetString
+        bcrypt.compare(hashedString, resetString)
+        .then(bcryptResult => {
+          if(bcryptResult) {
+            bcrypt.hash(newPassword, 10)
+            .then(newHashedPassword => {
+              User.updateOne({_id: userId}, {password: newHashedPassword})
+              .then(() => {
+                PasswordReset.deleteMany({userId})
+                .then(() => {
+                  res.status(200)
+                  .json({
+                    status: "SUCCESS",
+                    message: "password has successfully been updated"
+                  })
+                })
+                .catch(err => {
+                  res.status(400).json({
+                    status: "FAILED",
+                    message: "An Error occurred"
+                  })
+                })
+              })
+              .catch(err => {
+                res.status(400).json({
+                  status: "FAILED",
+                  message: "An Error occurred"
+                })
+              })
+            })
+            .catch(err => {
+              res.status(400).json({
+                status: "FAILED",
+                message: "An Error occurred"
+              })
+            })
+          } else {
+            res.status(400).json({
+              status: "FAILED",
+              message: "An Error occurred"
+            })
+          }
+        })
+        .catch(err => {
+          res.status(400).json({
+            status: "FAILED",
+            message: "An Error occurred"
+          })
+        })
+      }
+
+     
+    } else {
+      res.status(400).json({
+        status: "FAILED",
+        message: "Error occurred"
+      })
+    }
+  })
+  .catch(err => {
+    console.log(err);
+    res.status(400).json({
+      status: "FAILED",
+      message: "Error occurred"
+    })
+  })
 })
 
 module.exports = router
