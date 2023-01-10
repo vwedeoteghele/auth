@@ -93,7 +93,7 @@ const sendResetEmail = ({_id, email}, url, res) => {
   from: process.env.AUTH_EMAIL,
   to: email,
   subject: "Reset your password",
-  html: `<p>We heard you lost access to your accunt, we got your back on this. Clink on the link below to reset your password</p><p>This link <b>expires in 60 minutes</b></p><p>Press <a href=${url + "/" + _id + "/" + resetString}>Here</a> to proceed</p>`
+  html: `<p>We heard you lost access to your account, we got your back on this. Click on the link below to reset your password</p><p>This link <b>expires in 60 minutes</b></p><p>Press <a href=${url + "/" + _id + "/" + resetString}>Here</a> to proceed</p>`
  }
 
 bcrypt.hash(resetString, 10)
